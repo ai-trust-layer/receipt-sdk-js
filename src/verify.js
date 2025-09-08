@@ -4,7 +4,7 @@ const Ajv = require('ajv');
 const addFormats = require('ajv-formats');
 
 const SCHEMA = JSON.parse(fs.readFileSync(__dirname + '/../schema/receipt.schema.json','utf8'));
-const ajv = new Ajv({allErrors:true, strict:false});
+const ajv = new Ajv({ allErrors: true, strict: false });
 addFormats(ajv);
 const validate = ajv.compile(SCHEMA);
 
