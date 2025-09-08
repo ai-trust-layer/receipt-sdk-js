@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+const fs = require('fs');
+const { validateSchema, verifyHashes, verifySignature, verifyAnchor } = require('../src/verify');
+
+function usage(){ console.log('Usage: receipt-verify <receipt.json> [--input PATH] [--output PATH] [--salt HEX] [--mode prefix|suffix]'); process.exit(1); }
+
+const args = process.argv.slice(2);
+if (args.length<1) usage();
+const receiptPath = args[0];
+let inputPath=null, outputPath=null, salt=null, mode='prefix';
+
+for (let i=1;i<args.length;i++){
+  if(args[i]==='--input') inputPath=args[++i];
+  else if(args[i]==='--output') outputPath=args[++i];
+  else if(args[i]==='--salt') salt=args[++i];
+  else if(args[i]==='--mode') mode=args[++i];
+}
+
+const receipt = JSON.parse(fs.readFileSync(receiptPath,'utf8'));
+const s = validateSchema(receipt);
+const a = verifyAnchor(receipt);
+const h = verifyHashes({ receipt, inputPath, outputPath, saltHex:salt, mode });
+const sig = verifySignature(receipt);
+
+const verdict = (s.ok && a.ok && h.ok);
+console.log(JSON.stringify({ verdict: verdict?'PASS':'FAIL', checks:{ schema:s.ok, anchor:a, hashes:h, signature:sig }}, null, 2));
+process.exit(verdict?0:2);
