@@ -1,27 +1,55 @@
 #!/usr/bin/env node
-const fs = require('fs');
-const { validateSchema, verifyHashes, verifySignature, verifyAnchor } = require('../src/verify');
+import { readFileSync, existsSync } from "fs";
+import { validateSchema, verifyHashes, computeTrustScore } from "../src/index.js";
 
-function usage(){ console.log('Usage: receipt-verify <receipt.json> [--input PATH] [--output PATH] [--salt HEX] [--mode prefix|suffix]'); process.exit(1); }
+const USAGE = `Usage:
+  receipt-verify verify <receipt.json> --schema <schema.json> [--input <file>] [--output <file>]`;
 
-const args = process.argv.slice(2);
-if (args.length<1) usage();
-const receiptPath = args[0];
-let inputPath=null, outputPath=null, salt=null, mode='prefix';
+async function main(){
+  const args = process.argv.slice(2);
+  if (args[0] !== "verify") { console.error(USAGE); process.exit(2); }
 
-for (let i=1;i<args.length;i++){
-  if(args[i]==='--input') inputPath=args[++i];
-  else if(args[i]==='--output') outputPath=args[++i];
-  else if(args[i]==='--salt') salt=args[++i];
-  else if(args[i]==='--mode') mode=args[++i];
+  const receiptPath = args[1];
+  const sIdx = args.indexOf("--schema");
+  if (!receiptPath || sIdx === -1) { console.error(USAGE); process.exit(2); }
+  const schemaPath = args[sIdx+1];
+
+  const iIdx = args.indexOf("--input");
+  const oIdx = args.indexOf("--output");
+
+  const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  const schemaRes = validateSchema(receipt, schemaPath);
+
+  let hashesRes = { ok:false, input:false, output:false };
+  if (iIdx !== -1 && oIdx !== -1) {
+    const inPath = args[iIdx+1], outPath = args[oIdx+1];
+    if (existsSync(inPath) && existsSync(outPath)) {
+      hashesRes = verifyHashes({
+        input: readFileSync(inPath),
+        output: readFileSync(outPath),
+        receipt
+      });
+    }
+  }
+
+  const score = computeTrustScore({
+    schema: schemaRes.ok,
+    hashes: hashesRes.ok,
+    signature: false,
+    anchor: false
+  });
+
+  const result = {
+    pass: schemaRes.ok && hashesRes.ok,
+    schema_ok: schemaRes.ok,
+    schema_errors: schemaRes.errors,
+    hashes_ok: hashesRes.ok,
+    details: { hashes: hashesRes },
+    trust_score: score
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+  process.exit(result.pass ? 0 : 1);
 }
 
-const receipt = JSON.parse(fs.readFileSync(receiptPath,'utf8'));
-const s = validateSchema(receipt);
-const a = verifyAnchor(receipt);
-const h = verifyHashes({ receipt, inputPath, outputPath, saltHex:salt, mode });
-const sig = verifySignature(receipt);
-
-const verdict = (s.ok && a.ok && h.ok);
-console.log(JSON.stringify({ verdict: verdict?'PASS':'FAIL', checks:{ schema:s.ok, anchor:a, hashes:h, signature:sig }}, null, 2));
-process.exit(verdict?0:2);
+main().catch(e=>{ console.error(e); process.exit(2); });
