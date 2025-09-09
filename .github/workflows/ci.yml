@@ -1,5 +1,8 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,5 +18,5 @@ jobs:
       - run: curl -L -o tmp/ok.json https://raw.githubusercontent.com/ai-trust-layer/receipt-spec/v1.0.3/examples/ok.json
       - run: echo "hello input" > tmp/in.txt
       - run: echo "hello output" > tmp/out.txt
-      - run: IH=$(sha256sum tmp/in.txt | cut -d" " -f1) && OH=$(sha256sum tmp/out.txt | cut -d" " -f1) && jq --arg ih "$IH" --arg oh "$OH" '.input_hash=$ih | .output_hash=$oh' tmp/ok.json > tmp/ok-local.json
+      - run: IH=$(sha256sum tmp/in.txt | cut -d" " -f1) && OH=$(sha256sum tmp/out.txt | cut -d" " -f1) && jq --arg ih "sha256:$IH" --arg oh "sha256:$OH" '.input_hash=$ih | .output_hash=$oh' tmp/ok.json > tmp/ok-local.json
       - run: node bin/receipt-verify verify tmp/ok-local.json --schema tmp/schema.json --input tmp/in.txt --output tmp/out.txt
