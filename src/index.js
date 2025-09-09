@@ -16,14 +16,20 @@ export function sha256Hex(buf) {
   return createHash("sha256").update(buf).digest("hex");
 }
 
+function norm(h) {
+  if (!h || typeof h !== 'string') return "";
+  return h.toLowerCase().replace(/^sha256:/, "");
+}
+
 export function verifyHashes({ input, output, receipt }) {
-  const inputHash = sha256Hex(Buffer.isBuffer(input)?input:Buffer.from(input));
-  const outputHash = sha256Hex(Buffer.isBuffer(output)?output:Buffer.from(output));
-  const okIn = (receipt.input_hash||"").toLowerCase() === inputHash.toLowerCase();
-  const okOut = (receipt.output_hash||"").toLowerCase() === outputHash.toLowerCase();
+  const inHash = sha256Hex(Buffer.isBuffer(input)?input:Buffer.from(input));
+  const outHash = sha256Hex(Buffer.isBuffer(output)?output:Buffer.from(output));
+  const okIn = norm(receipt.input_hash) === inHash.toLowerCase();
+  const okOut = norm(receipt.output_hash) === outHash.toLowerCase();
   return { ok: okIn && okOut, input: okIn, output: okOut };
 }
 
+// Stubs (înlocuibile ulterior cu implementări reale)
 export async function verifySignature(){ return { ok:true, note:"stub" }; }
 export async function verifyAnchor(){ return { ok:true, note:"stub" }; }
 
