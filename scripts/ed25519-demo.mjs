@@ -1,13 +1,14 @@
 import * as ed25519 from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha512";
-ed25519.utils.sha512Sync = (...m) => sha512(...m);
 
-// canonicalize subset: keys in lexicographic order, stable JSON
+// IMPORTANT pentru v2:
+ed25519.etc.sha512Sync = (...m) => sha512(...m);
+
+// canonicalize subset: keys sorted, JSON stabil
 function canonicalizeSubset(receipt) {
   const subsetKeys = ["id","issued_at","input_hash","output_hash","model_version","policy_version"];
   const obj = {};
   for (const k of subsetKeys) if (receipt[k] !== undefined) obj[k] = receipt[k];
-
   const sortObj = (o) => {
     if (Array.isArray(o)) return o.map(sortObj);
     if (o && typeof o === "object") {
@@ -21,7 +22,7 @@ function canonicalizeSubset(receipt) {
   return JSON.stringify(sorted);
 }
 
-// test-only private key (do not use in prod)
+// DEMO key (NU folosi în producție)
 const privHex = "0101010101010101010101010101010101010101010101010101010101010101";
 const priv = Uint8Array.from(Buffer.from(privHex, "hex"));
 
