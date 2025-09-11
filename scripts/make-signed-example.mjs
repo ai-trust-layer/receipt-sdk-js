@@ -1,6 +1,5 @@
 import * as ed from "@noble/ed25519";
 
-// subset canonic identic cu Python
 const SUBSET_KEYS = ["id","issued_at","input_hash","output_hash","model_version","policy_version"];
 const canonicalizeSubset = (r) => {
   const obj = {};
@@ -11,7 +10,6 @@ const canonicalizeSubset = (r) => {
   return JSON.stringify(obj);
 };
 
-// cheie demo (DOAR pentru teste)
 const PRIV = Buffer.alloc(32, 0x01);
 
 const r = {
@@ -20,7 +18,7 @@ const r = {
   input_hash: "a".repeat(64),
   output_hash: "b".repeat(64),
   model_version: "gpt-x-2025-09-01",
-  policy_version: "policy-v1.0",
+  policy_version: "policy-v1.0"
 };
 
 const msg = new TextEncoder().encode(canonicalizeSubset(r));
@@ -30,7 +28,7 @@ const sig = await ed.sign(msg, PRIV);
 r.signature = {
   alg: "ed25519",
   kid: "ed25519:" + Buffer.from(pub).toString("hex"),
-  sig: Buffer.from(sig).toString("base64"),
+  sig: Buffer.from(sig).toString("base64")
 };
 
 process.stdout.write(JSON.stringify(r));
