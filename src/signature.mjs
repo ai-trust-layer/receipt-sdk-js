@@ -1,51 +1,28 @@
-import * as ed25519 from "@noble/ed25519";
-import { sha512 } from "@noble/hashes/sha512";
-ed25519.etc.sha512Sync = (...m) => sha512(...m);
+import * as ed from "@noble/ed25519";
 
-// Canonicalizăm subsetul stabil (chei sortate)
-export function canonicalizeSubset(receipt) {
-  const subsetKeys = ["id","issued_at","input_hash","output_hash","model_version","policy_version"];
+const SUBSET_KEYS = ["id","issued_at","input_hash","output_hash","model_version","policy_version"];
+
+export function canonicalizeSubset(r) {
   const obj = {};
-  for (const k of subsetKeys) if (receipt[k] !== undefined) obj[k] = receipt[k];
-
-  const sortObj = (o) => {
-    if (Array.isArray(o)) return o.map(sortObj);
-    if (o && typeof o === "object") {
-      const out = {};
-      for (const k of Object.keys(o).sort()) out[k] = sortObj(o[k]);
-      return out;
-    }
-    return o;
-  };
-  return JSON.stringify(sortObj(obj));
+  for (const k of SUBSET_KEYS) {
+    if (r[k] === undefined) throw new Error(`missing ${k}`);
+    obj[k] = r[k];
+  }
+  return JSON.stringify(obj);
 }
 
-/**
- * Verifică semnătura din receipt.signature
- * Așteptări:
- *  - signature.alg === "ed25519"
- *  - signature.sig = base64(64 bytes)
- *  - signature.kid = "ed25519:<PUBKEY_HEX>" (suport DID în viitor)
- */
 export async function verifySignature(receipt) {
-  const sigObj = receipt?.signature;
-  if (!sigObj) return { ok: false, reason: "not_provided" };
-  if (sigObj.alg !== "ed25519") return { ok: false, reason: "alg_unsupported" };
-  if (!sigObj.sig) return { ok: false, reason: "sig_missing" };
-
-  let pubHex = null;
-  if (typeof sigObj.kid === "string" && sigObj.kid.startsWith("ed25519:")) {
-    pubHex = sigObj.kid.split(":")[1];
+  const s = receipt?.signature;
+  if (!s) return { ok: false, reason: "not_provided" };
+  if (s.alg !== "ed25519" || !s.sig || !s.kid?.startsWith("ed25519:")) {
+    return { ok: false, reason: "unsupported_alg" };
   }
-  if (!pubHex) return { ok: false, reason: "kid_unresolved" };
-
-  try {
-    const msg = new TextEncoder().encode(canonicalizeSubset(receipt));
-    const sig = Buffer.from(sigObj.sig, "base64");
-    const pub = Buffer.from(pubHex, "hex");
-    const ok = await ed25519.verify(sig, msg, pub);
-    return ok ? { ok: true } : { ok: false, reason: "bad_signature" };
-  } catch (e) {
-    return { ok: false, reason: "verify_error", error: String(e?.message || e) };
-  }
+  const pubHex = s.kid.slice("ed25519:".length);
+  const pub = Uint8Array.from(Buffer.from(pubHex, "hex"));
+  const sig = Uint8Array.from(Buffer.from(s.sig, "base64"));
+  const msg = new TextEncoder().encode(canonicalizeSubset(receipt));
+  const ok = await ed.verify(sig, msg, pub);
+  return { ok, reason: ok ? "Signature valid" : "bad_signature" };
 }
+
+export default { verifySignature, canonicalizeSubset };
