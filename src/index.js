@@ -1,46 +1,81 @@
-import Ajv from "ajv/dist/2020.js";
+import Ajv from "ajv";
 import addFormats from "ajv-formats";
-import draft7 from "ajv/dist/refs/json-schema-draft-07.json" assert { type: "json" };
-import { createHash } from "crypto";
-import { readFileSync } from "fs";
+import { createRequire } from "module";
+import fs from "fs";
+const require = createRequire(import.meta.url);
 
-export function validateSchema(receipt, schemaPath) {
-  const schema = JSON.parse(readFileSync(schemaPath,"utf8"));
-  const ajv = new Ajv({ allErrors:true, strict:false });
-  ajv.addMetaSchema(draft7);
+// Load JSON Schema draft-07 meta explicitly (meta:false)
+const draft7Meta = require("ajv/dist/refs/json-schema-draft-07.json");
+const DRAFT7_ID = "http://json-schema.org/draft-07/schema#";
+
+function loadJsonMaybe(x) {
+  if (typeof x === "string") {
+    const txt = fs.readFileSync(x, "utf8");
+    return JSON.parse(txt);
+  }
+  return x;
+}
+
+function looksLikeSchema(x) {
+  return x && typeof x === "object" &&
+    (x.$schema || x.$id || x.properties || x.type === "object");
+}
+
+export function makeAjv() {
+  const ajv = new Ajv({ allErrors: true, strict: false, meta: false });
+  ajv.addMetaSchema(draft7Meta);      // register once
+  ajv.opts.defaultMeta = DRAFT7_ID;   // use draft-07
   addFormats(ajv);
-  const validate = ajv.compile(schema);
-  const ok = validate(receipt);
-  return { ok, errors: ok ? [] : validate.errors };
+  return ajv;
 }
 
-export function sha256Hex(buf) {
-  return createHash("sha256").update(buf).digest("hex");
+// Robust: acceptă (schema, data) sau (data, schema); încărcăm fișierele dacă vin ca string.
+export function validateSchema(schemaInput, dataInput) {
+  let a = loadJsonMaybe(schemaInput);
+  let b = loadJsonMaybe(dataInput);
+
+  // Dacă primul NU arată ca schemă iar al doilea DA, inversăm ordinea
+  let schema = looksLikeSchema(a) ? a : (looksLikeSchema(b) ? b : a);
+  let data   = (schema === a) ? b : a;
+
+  const ajv = makeAjv();
+  try {
+    const validate = ajv.compile(schema);
+    const ok = !!validate(data);
+    return { ok, errors: ok ? [] : (validate.errors || []) };
+  } catch (e) {
+    const msg = String(e && e.message || e);
+    // fallback: dacă tot pare să fie inversată ordinea, reîncercăm invers
+    if (/keyword "id"/i.test(msg) || /schema must be object or boolean/i.test(msg)) {
+      const ajv2 = makeAjv();
+      const validate2 = ajv2.compile(loadJsonMaybe(data));
+      const ok2 = !!validate2(loadJsonMaybe(schema));
+      return { ok: ok2, errors: ok2 ? [] : (validate2.errors || []) };
+    }
+    throw e;
+  }
 }
 
-function norm(h) {
-  if (!h || typeof h !== 'string') return "";
-  return h.toLowerCase().replace(/^sha256:/, "");
+// Stubs (până cablăm implementările reale)
+export async function verifySignature(receipt) {
+  if (!receipt || !receipt.signature) return { ok: false, reason: "not_provided" };
+  return { ok: false, reason: "not_implemented" };
+}
+export function verifyHashes(/* receipt, opts */) {
+  return { ok: false, reason: "not_implemented" };
+}
+export async function verifyAnchor(/* receipt */) {
+  return { ok: false, reason: "not_implemented" };
 }
 
-export function verifyHashes({ input, output, receipt }) {
-  const inHash = sha256Hex(Buffer.isBuffer(input)?input:Buffer.from(input));
-  const outHash = sha256Hex(Buffer.isBuffer(output)?output:Buffer.from(output));
-  const okIn = norm(receipt.input_hash) === inHash.toLowerCase();
-  const okOut = norm(receipt.output_hash) === outHash.toLowerCase();
-  return { ok: okIn && okOut, input: okIn, output: okOut };
-}
-
-// Stubs (înlocuibile ulterior cu implementări reale)
-export async function verifySignature(){ return { ok:true, note:"stub" }; }
-export async function verifyAnchor(){ return { ok:true, note:"stub" }; }
-
-export function computeTrustScore(parts) {
-  const w = { schema:0.5, hashes:0.4, signature:0.05, anchor:0.05 };
-  let s = 0;
-  if (parts.schema) s += 100*w.schema;
-  if (parts.hashes) s += 100*w.hashes;
-  if (parts.signature) s += 100*w.signature;
-  if (parts.anchor) s += 100*w.anchor;
-  return Math.round(s);
+// Necesare pentru CLI
+export function computeTrustScore(receipt, parts = {}) {
+  if (receipt && typeof receipt.trustscore === "number") {
+    const t = receipt.trustscore;
+    return Number.isFinite(t) ? Math.max(0, Math.min(100, t)) : 0;
+  }
+  const sig = parts.signature_ok === true ? 1 : 0;
+  const hashes = parts.hashes_ok === true ? 1 : 0;
+  const anchor = parts.anchor_ok === true ? 1 : 0;
+  return sig*40 + hashes*40 + anchor*20; // max 100
 }
