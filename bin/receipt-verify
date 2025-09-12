@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "fs";
 import { validateSchema, verifyHashes, computeTrustScore } from "../src/index.js";
 
 const USAGE = `Usage:
-  receipt-verify verify <receipt.json> --schema <schema.json> [--input <file>] [--output <file>]`;
+  receipt-verify verify <receipt.json> --schema <schema.json> [--input <file>] [--output <file>] [--schema-only]`;
 
 async function main(){
   const args = process.argv.slice(2);
@@ -16,12 +16,13 @@ async function main(){
 
   const iIdx = args.indexOf("--input");
   const oIdx = args.indexOf("--output");
+  const SCHEMA_ONLY = args.includes("--schema-only");
 
   const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
   const schemaRes = validateSchema(receipt, schemaPath);
 
   let hashesRes = { ok:false, input:false, output:false };
-  if (iIdx !== -1 && oIdx !== -1) {
+  if (!SCHEMA_ONLY && iIdx !== -1 && oIdx !== -1) {
     const inPath = args[iIdx+1], outPath = args[oIdx+1];
     if (existsSync(inPath) && existsSync(outPath)) {
       hashesRes = verifyHashes({
@@ -34,16 +35,17 @@ async function main(){
 
   const score = computeTrustScore({
     schema: schemaRes.ok,
-    hashes: hashesRes.ok,
+    hashes: SCHEMA_ONLY ? true : hashesRes.ok,
     signature: false,
     anchor: false
   });
 
   const result = {
-    pass: schemaRes.ok && hashesRes.ok,
+    pass: SCHEMA_ONLY ? schemaRes.ok : (schemaRes.ok && hashesRes.ok),
     schema_ok: schemaRes.ok,
     schema_errors: schemaRes.errors,
-    hashes_ok: hashesRes.ok,
+    hashes_ok: SCHEMA_ONLY ? true : hashesRes.ok,
+    ...(SCHEMA_ONLY ? { hashes_mode: "skipped" } : {}),
     details: { hashes: hashesRes },
     trust_score: score
   };
