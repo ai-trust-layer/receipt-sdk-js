@@ -2,21 +2,42 @@ name: CI
 on:
   push:
   pull_request:
-  workflow_dispatch:
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repo (JS SDK)
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm ci || npm i
-      - run: sudo apt-get update && sudo apt-get install -y jq
-      - run: mkdir -p tmp
-      - run: curl -L -o tmp/schema.json https://raw.githubusercontent.com/ai-trust-layer/receipt-spec/v1.0.3/schema/receipt.schema.json
-      - run: curl -L -o tmp/ok.json https://raw.githubusercontent.com/ai-trust-layer/receipt-spec/v1.0.3/examples/ok.json
-      - run: echo "hello input" > tmp/in.txt
-      - run: echo "hello output" > tmp/out.txt
-      - run: IH=$(sha256sum tmp/in.txt | cut -d" " -f1) && OH=$(sha256sum tmp/out.txt | cut -d" " -f1) && jq --arg ih "sha256:$IH" --arg oh "sha256:$OH" '.input_hash=$ih | .output_hash=$oh' tmp/ok.json > tmp/ok-local.json
-      - run: node bin/receipt-verify verify tmp/ok-local.json --schema tmp/schema.json --input tmp/in.txt --output tmp/out.txt
+          node-version: '22.x'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Unit tests (if any)
+        run: npm test --if-present
+
+      - name: Checkout receipt-spec (for fixtures)
+        uses: actions/checkout@v4
+        with:
+          repository: ai-trust-layer/receipt-spec
+          path: receipt-spec
+
+      - name: CLI check — schema-only PASS
+        run: |
+          node bin/receipt-verify \
+            verify receipt-spec/proof-gallery/ok-1.json \
+            --schema receipt-spec/docs/receipt.schema.json \
+            --schema-only | grep -q '"pass": true'
+
+      - name: CLI check — tampered FAIL
+        run: |
+          node bin/receipt-verify \
+            verify receipt-spec/proof-gallery/tampered-1.json \
+            --schema receipt-spec/docs/receipt.schema.json \
+            | grep -q '"pass": false'
